@@ -68,7 +68,7 @@ impl Compressor {
     }
 
     // Create a frequency table and compress
-    fn compress(&self) {
+    fn compress(&self) -> (String, HashMap<char, String>) {
         let mut nodes: Vec<Node> = Vec::new();
         let mut frequency_map = HashMap::new();
 
@@ -107,12 +107,50 @@ impl Compressor {
         }
 
         println!("Encoded Text: {}", encoded_text);
+        (encoded_text, codes) // Return the encoded text and the encoding table
+    }
+}
+
+// Decoder struct
+struct Decoder {
+    encoded_text: String,
+    encoding_table: HashMap<char, String>,
+}
+
+impl Decoder {
+    fn decode(&self) -> String {
+        let mut binary = String::new();
+        let mut decoded_text = String::new();
+        let reversed_table: HashMap<String, char> = self.encoding_table
+            .iter()
+            .map(|(k, v)| (v.clone(), *k)) // Reverse the encoding table
+            .collect();
+
+        for bit in self.encoded_text.chars() {
+            binary.push(bit);
+            if let Some(&letter) = reversed_table.get(&binary) {
+                decoded_text.push(letter);
+                binary.clear();
+            }
+        }
+
+        println!("Decoded text: {}", decoded_text);
+        decoded_text
     }
 }
 
 fn main() {
     let text = String::from("BABABBABBBABABBABABEEEEEZZZIHDIAHIDHIAHD");
     let compressor_struct = Compressor { text };
-    compressor_struct.compress();
+    
+    // Compress the text
+    let (encoded_text, encoding_table) = compressor_struct.compress();
+    
+    // Create a decoder and decode the text
+    let decoder_struct = Decoder {
+        encoded_text,
+        encoding_table,
+    };
+    decoder_struct.decode();
 }
 
