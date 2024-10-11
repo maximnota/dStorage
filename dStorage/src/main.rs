@@ -1,32 +1,85 @@
-use std::io;
+use std::io; // Uncomment this for I/O operations
+
+// Define node struct
+#[derive(Debug, Clone)]
+struct Node {
+    frequency: i64,
+    letter: Option<char>,
+}
+
+struct Compressor {
+    text: String,
+}
+
+impl Compressor {
+    fn find_smallest_item(&self, nodes: &Vec<Node>) -> (usize, Node) {
+        let mut smallest_index = 0;
+        let mut smallest_node = &nodes[0];
+
+        for (i, node) in nodes.iter().enumerate() {
+            if node.frequency < smallest_node.frequency {
+                smallest_node = node;
+                smallest_index = i;
+            }
+        }
+
+        (smallest_index, smallest_node.clone())
+    }
+
+    fn merge_smallest_branches(&self, mut nodes: Vec<Node>) -> Vec<Node> {
+        while nodes.len() > 1 {
+            let (first_index, first_smallest) = self.find_smallest_item(&nodes);
+            nodes.remove(first_index); // Remove the first smallest
+
+            let (second_index, second_smallest) = self.find_smallest_item(&nodes);
+            nodes.remove(second_index); // Remove the second smallest
+
+            let merged_node = Node {
+                frequency: first_smallest.frequency + second_smallest.frequency,
+                letter: None, // Internal nodes have no character
+            };
+
+            nodes.push(merged_node);
+        }
+
+        nodes
+    }
+
+    fn compress(&self) {
+        let mut nodes: Vec<Node> = Vec::new();
+        let mut frequency_map = std::collections::HashMap::new();
+
+        for character in self.text.chars() {
+            *frequency_map.entry(character).or_insert(0) += 1;
+        }
+
+        // Create nodes from the frequency map
+        for (letter, frequency) in frequency_map {
+            if Some(letter) {
+                nodes.push(Node {
+                    frequency: frequency,
+                    letter: Some(letter),
+                });
+
+            } if None {
+                println!("No letters unfortunately")
+            }
+        }
+
+        println!("Initial Nodes: {:?}", nodes);
+
+        let compressed_tree = self.merge_smallest_branches(nodes);
+
+        println!("Final Huffman Tree: {:?}", compressed_tree);
+    }
+}
 
 fn main() {
-    loop {
-        let mut choice = String::new();
-        let mut file_path = String::new();
+    let text = String::from("AABBBBDDDDDDCCC");
+    let compressor_struct = Compressor {
+        text: text,
+    };
 
-        println!("Would you like to upload or download a file? Enter 1 for upload, 2 for download, or 0 to quit:");
-        io::stdin().read_line(&mut choice).expect("Sorry, unable to read your input");
-        let choice = choice.trim();  // Trim the newline characters
-
-        println!("Your choice was {choice}");
-
-        if choice == "1" {
-            println!("Choose a file to upload - enter the path to that file:");
-            io::stdin().read_line(&mut file_path).expect("Sorry, unable to read your input");
-            let file_path = file_path.trim();  // Trim the newline characters
-            println!("You selected the file: {file_path} to upload.");
-        } else if choice == "2" {
-            println!("Choose a file to download - enter the pointer ID or path:");
-            io::stdin().read_line(&mut file_path).expect("Sorry, unable to read your input");
-            let file_path = file_path.trim();  // Trim the newline characters
-            println!("You selected the file: {file_path} to download.");
-        } else if choice == "0" {
-            println!("Quitting the app.");
-            break;
-        } else {
-            println!("Invalid choice, sorry!");
-        }
-    }
+    compressor_struct.compress();
 }
 
