@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::fs;
+use std::io;
 
 // Define Node struct
 #[derive(Debug, Clone)]
@@ -139,18 +141,52 @@ impl Decoder {
     }
 }
 
-fn main() {
-    let text = String::from("BABABBABBBABABBABABEEEEEZZZIHDIAHIDHIAHD");
+fn upload(file_path:&str) {
+    let text = fs::read_to_string(file_path).expect("Unable to read text within file");
     let compressor_struct = Compressor { text };
     
     // Compress the text
     let (encoded_text, encoding_table) = compressor_struct.compress();
     
     // Create a decoder and decode the text
-    let decoder_struct = Decoder {
+        let decoder_struct = Decoder {
         encoded_text,
         encoding_table,
     };
     decoder_struct.decode();
+
 }
 
+fn clean_file_path(input: &str) -> String {
+    input.replace("\\ ", " ")
+}
+
+fn main() { 
+    loop {
+        let mut choice = String::new();
+        let mut file_path = String::new();
+        println!("Would you like to upload or download a file? Enter 1 for upload, 2 for download, or 0 to quit:");
+        io::stdin().read_line(&mut choice).expect("Sorry, unable to read your input");
+        let choice = choice.trim();  // Trim the newline characters
+        println!("Your choice was {choice}");
+        if choice == "1" {
+            //Upload
+            println!("Choose a file to upload - enter the path to that file:");
+            io::stdin().read_line(&mut file_path).expect("Sorry, unable to read your input");
+            let file_path = file_path.trim();  // Trim the newline characters
+            println!("You selected the file: {file_path} to upload.");
+            upload(file_path);
+        } else if choice == "2" {
+            println!("Choose a file to download - enter the pointer ID or path:");
+            io::stdin().read_line(&mut file_path).expect("Sorry, unable to read your input");
+            let file_path = file_path.trim();  // Trim the newline characters
+            clean_file_path(file_path);
+            println!("You selected the file: {file_path} to download.");
+        } else if choice == "0" {
+            println!("Quitting the app.");
+            break;
+        } else {
+            println!("Invalid choice, sorry!");
+        }
+    }
+}
