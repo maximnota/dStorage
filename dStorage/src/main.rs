@@ -179,7 +179,7 @@ fn main() {
             println!("You selected the file: {file_path} to upload.");
             upload(&clean_file_path);
         } else if choice == "2" {
-            println!("Choose a file to download - enter the pointer ID or path:");
+            println!("Choose a file to download:");
             io::stdin().read_line(&mut file_path).expect("Sorry, unable to read your input");
             let file_path = file_path.trim();  // Trim the newline characters
             clean_file_path(file_path);
