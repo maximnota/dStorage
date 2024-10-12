@@ -89,7 +89,7 @@ impl Compressor {
             });
         }
 
-        println!("Initial Nodes: {:?}", nodes);
+        //println!("Initial Nodes: {:?}", nodes);
 
         // Merge branches to create the Huffman tree
         let huffman_tree = self.merge_smallest_branches(nodes);
@@ -98,7 +98,7 @@ impl Compressor {
         let mut codes = HashMap::new();
         self.generate_codes(&huffman_tree, String::new(), &mut codes);
 
-        println!("Huffman Codes: {:?}", codes);
+        //println!("Huffman Codes: {:?}", codes);
 
         // You can now use these codes to encode the text
         let mut encoded_text = String::new();
@@ -108,7 +108,7 @@ impl Compressor {
             }
         }
 
-        println!("Encoded Text: {}", encoded_text);
+        //println!("Encoded Text: {}", encoded_text);
         (encoded_text, codes) // Return the encoded text and the encoding table
     }
 }
@@ -121,8 +121,8 @@ struct Decoder {
 
 impl Decoder {
     fn decode(&self) -> String {
-        let mut binary = String::new();
-        let mut decoded_text = String::new();
+        let mut binary:String = String::new();
+        let mut decoded_text:String = String::new();
         let reversed_table: HashMap<String, char> = self.encoding_table
             .iter()
             .map(|(k, v)| (v.clone(), *k)) // Reverse the encoding table
@@ -136,24 +136,93 @@ impl Decoder {
             }
         }
 
-        println!("Decoded text: {}", decoded_text);
+        //println!("Decoded text: {}", decoded_text);
         decoded_text
     }
 }
 
+
+struct Slicer {
+    text: String,
+    slice_amount: usize, 
+}
+
+impl Slicer {
+    fn slice(&self) -> Vec<&str> {
+        let text_len = self.text.len();
+        let mut slices = vec![];
+
+        if self.slice_amount == 0 {
+            return slices; 
+        }
+
+        let whole_slices = text_len % self.slice_amount == 0;
+        let slice_len = text_len / self.slice_amount;
+        
+        if whole_slices {
+            for i in 0..self.slice_amount {
+                let start = i * slice_len;
+                let end = start + slice_len;
+                slices.push(&self.text[start..end]);
+            }
+        } else {
+            for i in 0..(self.slice_amount - 1) {
+                let start = i * slice_len;
+                let end = start + slice_len;
+                slices.push(&self.text[start..end]);
+            }
+            let start = (self.slice_amount - 1) * slice_len;
+            slices.push(&self.text[start..]);
+        }
+        
+        slices
+    }
+}
+
+struct Compiler<'a> {
+    slices: Vec<&'a str>,
+}
+
+impl<'a> Compiler<'a> {
+    fn compile(&self) -> String {
+        let mut result = String::new();
+        for slice in &self.slices {
+            result.push_str(slice);
+        }
+        result
+    }
+}
+
+
 fn upload(file_path:&str) {
     let text = fs::read_to_string(file_path).expect("Unable to read text within file");
-    let compressor_struct = Compressor { text };
-    
+
+    let slicer = Slicer {
+        text:text.clone(),
+        slice_amount: 3,
+    };
+    let slices = slicer.slice();
+
+    let compiler = Compiler {
+        slices
+    };
+    let result = compiler.compile();
+    println!("Original text {}", result);
+
+    //for slice in slices.iter() {
+    //    let compressor_struct = Compressor { text: text.clone() };
+    //    let (encoded_text, encoding_table) = compressor_struct.compress();
+    //    println!("{}", encoded_text);
+    //}
+
     // Compress the text
-    let (encoded_text, encoding_table) = compressor_struct.compress();
     
     // Create a decoder and decode the text
-    let decoder_struct = Decoder {
-        encoded_text,
-        encoding_table,
-    };
-    decoder_struct.decode();
+    // let decoder_struct = Decoder {
+    //    encoded_text,
+    //    encoding_table,
+    //};
+    //decoder_struct.decode();
 
 }
 
