@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 use std::fs;
 use std::io;
+use std::net::{TcpListener, SocketAddr, TcpStream};
+use std::thread;
+use std::io::prelude::*;
 
 // Define Node struct
 #[derive(Debug, Clone)]
@@ -193,6 +196,72 @@ impl<'a> Compiler<'a> {
     }
 }
 
+struct Receiver {
+    primary_port: i32,
+    secondary_port: i32,
+    response: Option<String>,
+}
+
+impl Receiver {
+    fn receive(&self) {
+        let addrs = [
+            SocketAddr::from(([127, 0, 0, 1], self.primary_port as u16)),
+            SocketAddr::from(([127, 0, 0, 1], self.secondary_port as u16)),
+        ];
+
+        let listener = TcpListener::bind(&addrs[..]).expect("Failed to bind to address");
+
+        println!("Server listening on ports {} and {}", self.primary_port, self.secondary_port);
+
+        for stream in listener.incoming() {
+            match stream {
+                Ok(stream) => {
+                    let message = self.response.clone();
+                    thread::spawn(move || {
+                        handle_client(stream, message);
+                    });
+                }
+                Err(e) => {
+                    eprintln!("Failed to accept connection: {}", e);
+                }
+            }
+        }
+    }
+}
+
+fn handle_client(mut stream: TcpStream, response: Option<String>) {
+    let mut buffer = [0; 1024];
+    let bytes_read = stream.read(&mut buffer).expect("Failed to read from client!");
+
+    let request = String::from_utf8_lossy(&buffer[..bytes_read]);
+    println!("Received request: {}", request);
+
+    match response {
+        Some(response) => {
+            stream.write(response.as_bytes()).expect("Failed to write response.");
+        }
+        None => {
+            println!("No response to write.");
+        }
+    }
+}
+
+
+
+struct Request {
+    ip: SocketAddr,
+    message: String,
+}
+
+impl Request {
+    fn sendRequest(&self) {
+        let mut stream = TcpStream::connect(self.ip)
+                       .expect("Couldn't connect to the server...");
+        stream.write(self.message.as_bytes()).expect("Failed to write message");
+    }
+}
+
+
 
 fn upload(file_path:&str) {
     let text = fs::read_to_string(file_path).expect("Unable to read text within file");
@@ -232,32 +301,39 @@ fn clean_file_path(input: &str) -> String {
 
 
 fn main() {
-    loop {
-        let mut choice = String::new();
-        let mut file_path = String::new();
-        println!("Would you like to upload or download a file? Enter 1 for upload, 2 for download, or 0 to quit:");
-        io::stdin().read_line(&mut choice).expect("Sorry, unable to read your input");
-        let choice = choice.trim();  // Trim the newline characters
-        println!("Your choice was {choice}");
-        if choice == "1" {
-            //Upload
-            println!("Choose a file to upload - enter the path to that file:");
-            io::stdin().read_line(&mut file_path).expect("Sorry, unable to read your input");
-            let file_path = file_path.trim();  // Trim the newline characters
-            let clean_file_path = clean_file_path(file_path);
-            println!("You selected the file: {file_path} to upload.");
-            upload(&clean_file_path);
-        } else if choice == "2" {
-            println!("Choose a file to download:");
-            io::stdin().read_line(&mut file_path).expect("Sorry, unable to read your input");
-            let file_path = file_path.trim();  // Trim the newline characters
-            clean_file_path(file_path);
-            println!("You selected the file: {file_path} to download.");
-        } else if choice == "0" {
-            println!("Quitting the app.");
-            break;
-        } else {
-            println!("Invalid choice, sorry!");
-        }
-    }
+    //loop {
+    //    let mut choice = String::new();
+    //    let mut file_path = String::new();
+    //    println!("Would you like to upload or download a file? Enter 1 for upload, 2 for download, or 0 to quit:");
+    //    io::stdin().read_line(&mut choice).expect("Sorry, unable to read your input");
+    //    let choice = choice.trim();  // Trim the newline characters
+    //    println!("Your choice was {choice}");
+    //    if choice == "1" {
+    //        //Upload
+    //        println!("Choose a file to upload - enter the path to that file:");
+    //        io::stdin().read_line(&mut file_path).expect("Sorry, unable to read your input");
+    //        let file_path = file_path.trim();  // Trim the newline characters
+    //        let clean_file_path = clean_file_path(file_path);
+    //        println!("You selected the file: {file_path} to upload.");
+    //        upload(&clean_file_path);
+    //    } else if choice == "2" {
+    //        println!("Choose a file to download:");
+    //        io::stdin().read_line(&mut file_path).expect("Sorry, unable to read your input");
+    //        let file_path = file_path.trim();  // Trim the newline characters
+    //        clean_file_path(file_path);
+    //        println!("You selected the file: {file_path} to download.");
+    //    } else if choice == "0" {
+    //        println!("Quitting the app.");
+    //        break;
+    //    } else {
+    //        println!("Invalid choice, sorry!");
+    //    }
+    //}
+    //let reciever = Receiver {
+    //    primary_port: 6942,
+    //    secondary_port: 5439,
+    //    response: None,
+    //};
+    //reciever.receive();
+    //println!("Test");
 }
