@@ -199,7 +199,7 @@ impl<'a> Compiler<'a> {
 struct Receiver {
     primary_port: i32,
     secondary_port: i32,
-    response: Option<String>,
+    response: Option<fn(TcpStream)>,
 }
 
 impl Receiver {
@@ -209,16 +209,26 @@ impl Receiver {
             SocketAddr::from(([127, 0, 0, 1], self.secondary_port as u16)),
         ];
 
+        // Try binding the listener to both ports
         let listener = TcpListener::bind(&addrs[..]).expect("Failed to bind to address");
 
         println!("Server listening on ports {} and {}", self.primary_port, self.secondary_port);
 
+        // Accept incoming connections
         for stream in listener.incoming() {
             match stream {
                 Ok(stream) => {
-                    let message = self.response.clone();
+                    let response = self.response;
+
                     thread::spawn(move || {
-                        handle_client(stream, message);
+                        match response {
+                            Some(func) => {
+                                func(stream);
+                            }
+                            None => {
+                                handle_client(stream, None);
+                            }
+                        }
                     });
                 }
                 Err(e) => {
