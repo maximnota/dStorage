@@ -4,12 +4,57 @@ use std::io;
 use std::net::{TcpListener, SocketAddr, TcpStream};
 use std::thread;
 use std::io::prelude::*;
+use rusqlite::{Connection, Result};
+use std::fs::File;
+use std::path::Path;
+
+
+
+struct FilePointer {
+    id: i32,
+    ip: String,
+    file_name: String,
+    dictionary_in_place: bool,
+    encoded_text_in_place: bool,
+}
+
+impl FilePointer {
+    fn write_dictionary(&self, dictionary_bytes: Vec<u8>) -> Result<(), std::io::Error> {
+        let file_name = format!("{}/{}_dictionary.txt", self.ip, self.file_name);
+        let path = Path::new(&file_name);
+
+        let mut file = if path.exists() {
+            println!("File exists: {}", file_name);
+            File::open(path)?
+        } else {
+            println!("File didn't exist. Creating one now: {}", file_name);
+            File::create(path)?
+        };
+        file.write_all(&dictionary_bytes)?;
+        Ok(())
+    }
+
+    fn write_encoded_text(&self, encoded_text_bytes: Vec<u8>) -> Result<(), std::io::Error> {
+        let file_name = format!("{}/{}_encoded_text.txt", self.ip, self.file_name);
+        let path = Path::new(&file_name);
+
+        let mut file = if path.exists() {
+            println!("File exists: {}", file_name);
+            File::open(path)?
+        } else {
+            println!("File didn't exist. Creating one now: {}", file_name);
+            File::create(path)?
+        };
+        file.write_all(&encoded_text_bytes)?;
+        Ok(())
+    }
+}
 
 // Define Node struct
 #[derive(Debug, Clone)]
 struct Node {
     frequency: i64,
-    letter: Option<char>, // Some for leaves, None for internal nodes
+    letter: Option<char>,    
     left: Option<Box<Node>>,
     right: Option<Box<Node>>,
 }
@@ -255,7 +300,55 @@ fn handle_client(mut stream: TcpStream, response: Option<String>) {
         }
     }
 }
+fn bits_to_u8(bits: &[u8]) -> Result<u8, String> {
+    if bits.len() != 8 {
+        return Err("The input must contain exactly 8 bits".into());
+    }
 
+    let mut result = 0u8;
+    for (i, &bit) in bits.iter().enumerate() {
+        if bit != 0 && bit != 1 {
+            return Err("Invalid bit value".into());
+        }
+        result |= bit << (7 - i); // Shift the bit to its correct position
+    }
+    Ok(result)
+}
+
+
+fn handle_file_upload_request(mut stream: std::net::TcpStream) -> Result<(), Box<dyn std::error::Error>> {
+    let mut buffer = [0; 1024];
+    let bytes_read = stream.read(&mut buffer)?;
+
+    let conn = Connection::open("pointers.db")?;
+
+    let table_name = "file_pointers";
+    let mut stmt = conn.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?1")?;
+    let table_exists = stmt.exists([table_name])?;
+
+    if !table_exists {
+        conn.execute(
+            "CREATE TABLE file_pointers (
+                id INTEGER PRIMARY KEY,
+                ip TEXT NOT NULL,
+                fileName TEXT NOT NULL,
+                dictionaryInPlace TEXT NOT NULL,
+                encodedTextInPlace TEXT NOT NULL
+            )",
+            [],
+        )?;
+    }
+
+    if buffer[0] == 0b1 {
+        println!("Request with dictionary");
+        let dictionary_buffer = &buffer[1..bytes_read];
+    } else if buffer[0] == 0b0 {
+        println!("Request with encoded data");
+        let encoded_text_buffer = &buffer[1..bytes_read];     
+    }
+
+    Ok(())
+}
 
 
 struct Request {
@@ -270,7 +363,6 @@ impl Request {
         stream.write(self.message.as_bytes()).expect("Failed to write message");
     }
 }
-
 
 
 fn upload(file_path:&str) {
