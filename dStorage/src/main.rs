@@ -7,7 +7,9 @@ use std::io::prelude::*;
 use rusqlite::{Connection, Result};
 use std::fs::File;
 use std::path::Path;
-
+use rusqlite::params;
+use std::fs::OpenOptions;
+use std::io::{Write, Read};
 
 
 struct FilePointer {
@@ -19,34 +21,58 @@ struct FilePointer {
 }
 
 impl FilePointer {
-    fn write_dictionary(&self, dictionary_bytes: Vec<u8>) -> Result<(), std::io::Error> {
-        let file_name = format!("{}/{}_dictionary.txt", self.ip, self.file_name);
+    fn write_dictionary(&self, dictionary_bytes: Vec<u8>) -> Result<(), io::Error> {
+        let directory = format!("{}", self.ip);
+        let file_name = format!("{}/{}_dictionary.txt", directory, self.file_name);
         let path = Path::new(&file_name);
 
-        let mut file = if path.exists() {
-            println!("File exists: {}", file_name);
-            File::open(path)?
-        } else {
-            println!("File didn't exist. Creating one now: {}", file_name);
-            File::create(path)?
-        };
+        if !Path::new(&directory).exists() {
+            fs::create_dir_all(&directory)?;
+        }
+
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)             
+            .open(path)?;
+
         file.write_all(&dictionary_bytes)?;
+        println!("Dictionary written to: {}", file_name);
         Ok(())
     }
 
-    fn write_encoded_text(&self, encoded_text_bytes: Vec<u8>) -> Result<(), std::io::Error> {
+    fn write_encoded_text(&self, encoded_text_bytes: Vec<u8>) -> Result<(), io::Error> {
+        let directory = format!("{}", self.ip);
+        let file_name = format!("{}/{}_encoded_text.txt", directory, self.file_name);
+        let path = Path::new(&file_name);
+
+        if !Path::new(&directory).exists() {
+            fs::create_dir_all(&directory)?;
+        }
+
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)            
+            .open(path)?;
+
+        file.write_all(&encoded_text_bytes)?;
+        println!("Encoded text written to: {}", file_name);
+        Ok(())
+    }
+
+    fn read_encoded_text(&self) -> Result<Vec<u8>, io::Error> {
         let file_name = format!("{}/{}_encoded_text.txt", self.ip, self.file_name);
         let path = Path::new(&file_name);
 
-        let mut file = if path.exists() {
-            println!("File exists: {}", file_name);
-            File::open(path)?
+        if path.exists() {
+            println!("Reading encoded text from: {}", file_name);
+            let data = fs::read(path)?;
+            Ok(data)
         } else {
-            println!("File didn't exist. Creating one now: {}", file_name);
-            File::create(path)?
-        };
-        file.write_all(&encoded_text_bytes)?;
-        Ok(())
+            println!("File doesn't exist: {}", file_name);
+            Err(io::Error::new(io::ErrorKind::NotFound, "File not found"))
+        }
     }
 }
 
@@ -316,7 +342,7 @@ fn bits_to_u8(bits: &[u8]) -> Result<u8, String> {
 }
 
 
-fn handle_file_upload_request(mut stream: std::net::TcpStream, file_name: String) -> Result<(), Box<dyn std::error::Error>> {
+fn handle_file_upload_request(mut stream: TcpStream, file_name: String) -> Result<(), Box<dyn std::error::Error>> {
     let mut buffer = [0; 1024];
     let bytes_read = stream.read(&mut buffer)?;
 
@@ -343,7 +369,6 @@ fn handle_file_upload_request(mut stream: std::net::TcpStream, file_name: String
     let ip = local_addr.ip().to_string();
 
     if buffer[0] == 0b1 {
-        // Request with dictionary
         println!("Request with dictionary");
         let dictionary_buffer = &buffer[1..bytes_read];
 
@@ -360,12 +385,10 @@ fn handle_file_upload_request(mut stream: std::net::TcpStream, file_name: String
 
         for file_pointer in result {
             let mut file_pointer = file_pointer?;
-            // Assuming `write_dictionary` is a method on FilePointer, adjust as needed
             file_pointer.write_dictionary(dictionary_buffer.to_vec())?;
         }
 
     } else if buffer[0] == 0b0 {
-        // Request with encoded data
         println!("Request with encoded data");
         let encoded_text_buffer = &buffer[1..bytes_read];
 
@@ -382,7 +405,6 @@ fn handle_file_upload_request(mut stream: std::net::TcpStream, file_name: String
 
         for file_pointer in result {
             let mut file_pointer = file_pointer?;
-            // Assuming `write_encoded_text` is a method on FilePointer, adjust as needed
             file_pointer.write_encoded_text(encoded_text_buffer.to_vec())?;
         }
     }
@@ -390,7 +412,55 @@ fn handle_file_upload_request(mut stream: std::net::TcpStream, file_name: String
     Ok(())
 }
 
+fn handle_file_download(mut stream: TcpStream, file_name: String) -> Result<(), Box<dyn std::error::Error>> {
+    let mut buffer = [0; 1024];
+    let bytes_read = stream.read(&mut buffer)?;
 
+    let conn = Connection::open("pointers.db")?;
+    let table_name = "file_pointers";
+    
+    let mut stmt = conn.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?1")?;
+    let table_exists = stmt.exists([table_name])?;
+
+    let local_addr = stream.local_addr()?;
+    let ip = local_addr.ip().to_string();
+    if !table_exists {
+        let response = format!("Declined: never had file '{}' uploaded to the machine from IP {}", file_name, ip);
+        stream.write_all(response.as_bytes())?;
+        return Ok(());
+    } else {
+        let mut stmt = conn.prepare(
+            "SELECT id, ip, fileName, dictionaryInPlace, encodedTextInPlace FROM file_pointers WHERE fileName=?1 AND ip=?2"
+        )?;
+        
+        let mut rows = stmt.query_map(params![file_name, ip], |row| {
+            Ok(FilePointer {
+                id: row.get(0)?,
+                ip: row.get(1)?,
+                file_name: row.get(2)?,
+                dictionary_in_place: row.get(3)?,
+                encoded_text_in_place: row.get(4)?,
+            })
+        })?;
+
+        if let Some(file_pointer) = rows.next() {
+            let file_pointer = file_pointer?;             
+            if file_pointer.encoded_text_in_place {
+                let encoded_data = file_pointer.read_encoded_text()?;
+                stream.write_all(&encoded_data)?;
+                println!("Sent encoded data for file: {}", file_pointer.file_name);
+            } else {
+                let response = "Encoded text not available yet";
+                stream.write_all(response.as_bytes())?;
+            }
+        } else {
+            let response = format!("Declined: No file '{}' found for IP {}", file_name, ip);
+            stream.write_all(response.as_bytes())?;
+        }
+    }
+
+    Ok(())
+}
 
 struct Request {
     ip: SocketAddr,
