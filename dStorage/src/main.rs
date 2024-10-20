@@ -316,7 +316,7 @@ fn bits_to_u8(bits: &[u8]) -> Result<u8, String> {
 }
 
 
-fn handle_file_upload_request(mut stream: std::net::TcpStream) -> Result<(), Box<dyn std::error::Error>> {
+fn handle_file_upload_request(mut stream: std::net::TcpStream, file_name: String) -> Result<(), Box<dyn std::error::Error>> {
     let mut buffer = [0; 1024];
     let bytes_read = stream.read(&mut buffer)?;
 
@@ -339,16 +339,57 @@ fn handle_file_upload_request(mut stream: std::net::TcpStream) -> Result<(), Box
         )?;
     }
 
+    let local_addr = stream.local_addr().unwrap();
+    let ip = local_addr.ip().to_string();
+
     if buffer[0] == 0b1 {
+        // Request with dictionary
         println!("Request with dictionary");
         let dictionary_buffer = &buffer[1..bytes_read];
+
+        let mut stmt = conn.prepare("SELECT id, ip, fileName, dictionaryInPlace, encodedTextInPlace FROM file_pointers WHERE dictionaryInPlace='FALSE' AND ip=?1")?;
+        let result = stmt.query_map([ip], |row| {
+            Ok(FilePointer {
+                id: row.get(0)?,
+                ip: row.get(1)?,
+                file_name: row.get(2)?,
+                dictionary_in_place: row.get(3)?,
+                encoded_text_in_place: row.get(4)?,
+            })
+        })?;
+
+        for file_pointer in result {
+            let mut file_pointer = file_pointer?;
+            // Assuming `write_dictionary` is a method on FilePointer, adjust as needed
+            file_pointer.write_dictionary(dictionary_buffer.to_vec())?;
+        }
+
     } else if buffer[0] == 0b0 {
+        // Request with encoded data
         println!("Request with encoded data");
-        let encoded_text_buffer = &buffer[1..bytes_read];     
+        let encoded_text_buffer = &buffer[1..bytes_read];
+
+        let mut stmt = conn.prepare("SELECT id, ip, fileName, dictionaryInPlace, encodedTextInPlace FROM file_pointers WHERE encodedTextInPlace='FALSE' AND ip=?1")?;
+        let result = stmt.query_map([ip], |row| {
+            Ok(FilePointer {
+                id: row.get(0)?,
+                ip: row.get(1)?,
+                file_name: row.get(2)?,
+                dictionary_in_place: row.get(3)?,
+                encoded_text_in_place: row.get(4)?,
+            })
+        })?;
+
+        for file_pointer in result {
+            let mut file_pointer = file_pointer?;
+            // Assuming `write_encoded_text` is a method on FilePointer, adjust as needed
+            file_pointer.write_encoded_text(encoded_text_buffer.to_vec())?;
+        }
     }
 
     Ok(())
 }
+
 
 
 struct Request {
