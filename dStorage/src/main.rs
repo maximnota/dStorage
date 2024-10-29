@@ -4,10 +4,9 @@ use std::io;
 use std::net::{TcpListener, SocketAddr, TcpStream};
 use std::thread;
 use std::io::prelude::*;
-use rusqlite::{Connection, Result};
+use rusqlite::{Connection, Result, params};
 use std::fs::File;
 use std::path::Path;
-use rusqlite::params;
 use std::fs::OpenOptions;
 use std::io::{Write, Read};
 
@@ -459,6 +458,81 @@ fn handle_file_download(mut stream: TcpStream, file_name: String) -> Result<(), 
         }
     }
 
+    Ok(())
+}
+// Function to send a decline response
+fn send_decline_response(addr: std::net::SocketAddr) {
+    let send_request = Request {
+        ip: addr,
+        message: "Declined: not part of network".to_string(),
+    };
+    send_request.sendRequest();
+}
+
+fn handle_requests(mut stream: TcpStream, network_id: String) -> Result<(), Box<dyn std::error::Error>> {
+    let mut buffer = [0; 1024];
+    let bytes_read = stream.read(&mut buffer)?;
+
+    let current_stage_code = u32::from_be_bytes(buffer[0..4].try_into()?);
+    let conn = Connection::open("pointers.db")?;
+    let table_name = format!("connections{}", network_id);
+
+    let table_exists = conn.prepare(&format!(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='{}'", table_name
+    ))?.exists([])?;
+
+    if !table_exists {
+        conn.execute(
+            &format!("CREATE TABLE {} (ip TEXT NOT NULL, stage TEXT NOT NULL)", table_name),
+            [],
+        )?;
+    }
+
+    let ip = stream.peer_addr()?.ip().to_string();
+    let user_exists = conn.prepare(&format!(
+        "SELECT ip FROM {} WHERE ip = ?1", table_name
+    ))?.exists(params![ip])?;
+
+    if user_exists {
+        let mut stmt = conn.prepare(&format!("SELECT stage FROM {} WHERE ip = ?1", table_name))?;
+        let stage: String = stmt.query_row(params![ip], |row| row.get(0))?;
+        match stage.as_str() {
+            "0011" => println!("Upload request stage"),
+            "0001" => println!("Download request stage"),
+            _ => println!("Unknown stage"),
+        }
+    } else {
+        match current_stage_code {
+            0b1111 => println!("Join request"),
+            0b0111 => println!("Leave request"),
+            0b0011 => {
+                println!("Upload request");
+                send_decline_response(stream.peer_addr()?);
+            }
+            0b0001 => {
+                println!("Download request");
+                send_decline_response(stream.peer_addr()?);
+            }
+            _ => println!("Unknown request"),
+        }
+    }
+
+    Ok(())
+}
+
+fn listen_for_requests() -> std::io::Result<()> {
+    let listener = TcpListener::bind("127.0.0.1:3567")?;
+    for stream in listener.incoming() {
+        match stream {
+            Ok(stream) => {
+                let network_id = "some_id".to_string(); // Example, use real network ID
+                std::thread::spawn(move || {
+                    handle_requests(stream, network_id).unwrap_or_else(|e| eprintln!("Error: {}", e));
+                });
+            }
+            Err(e) => eprintln!("Connection failed: {}", e),
+        }
+    }
     Ok(())
 }
 
