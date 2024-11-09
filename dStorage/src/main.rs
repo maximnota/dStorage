@@ -473,7 +473,7 @@ fn handle_requests(mut stream: TcpStream, network_id: String) -> Result<(), Box<
     let mut buffer = [0; 1024];
     let bytes_read = stream.read(&mut buffer)?;
 
-    let current_stage_code = u32::from_be_bytes(buffer[0..4].try_into()?);
+    let current_stage_code = u32::from_be_bytes(buffer[..4].try_into()?);
     let conn = Connection::open("pointers.db")?;
     let table_name = format!("connections{}", network_id);
 
@@ -497,8 +497,20 @@ fn handle_requests(mut stream: TcpStream, network_id: String) -> Result<(), Box<
         let mut stmt = conn.prepare(&format!("SELECT stage FROM {} WHERE ip = ?1", table_name))?;
         let stage: String = stmt.query_row(params![ip], |row| row.get(0))?;
         match stage.as_str() {
-            "0011" => println!("Upload request stage"),
-            "0001" => println!("Download request stage"),
+            "0011" => {
+                println!("Upload request stage");
+
+            },
+            "0001" => {
+                println!("Download starting");
+                let file_name = String::from_utf8_lossy(&buffer[..4]).to_string();
+                handle_file_download(stream, file_name);
+            },
+            "0111" => {
+                println!("Finishing upload..");
+                conn.execute(&format!("UPDATE {} SET stage = {} WHERE ip = {}", table_name, "0000".to_string(), ip), [])?;
+
+            }
             _ => println!("Unknown stage"),
         }
     } else {
@@ -507,11 +519,18 @@ fn handle_requests(mut stream: TcpStream, network_id: String) -> Result<(), Box<
             0b0111 => println!("Leave request"),
             0b0011 => {
                 println!("Upload request");
-                send_decline_response(stream.peer_addr()?);
+                if !user_exists {
+                    conn.execute(&format!("INSERT INTO {} values ({}, {})", table_name, ip, "0011".to_string()), [])?;
+                } else {
+                    conn.execute(&format!("UPDATE {} SET stage = {} WHERE ip = {}", table_name, "0011".to_string(), ip), [])?;
+                }
             }
             0b0001 => {
-                println!("Download request");
-                send_decline_response(stream.peer_addr()?);
+                if !user_exists {
+                    conn.execute(&format!("INSERT INTO {} values ({}, {})", table_name, ip, "0001".to_string()), [])?;
+                } else {
+                    conn.execute(&format!("UPDATE {} SET stage = {} WHERE ip = {}", table_name, "0001".to_string(), ip), [])?;
+                }
             }
             _ => println!("Unknown request"),
         }
